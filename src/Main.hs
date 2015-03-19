@@ -3,6 +3,7 @@ module Main where
 import Control.Applicative
 import Control.Monad
 import Data.List
+import Kain
 import System.Console.GetOpt
 import System.Environment
 import System.Exit
@@ -12,9 +13,6 @@ data OptionType = OptionHostName String
                 | OptionHostPort String
                 | OptionHelp
     deriving (Eq)
-
-type HostName = String
-type Port     = String
 
 isHostOption :: OptionType -> Bool
 isHostOption (OptionHostName _) = True
@@ -42,20 +40,20 @@ main = do
     argv <- getArgs
     progname <- getProgName
     let (opts, _, errs) = getOpt Permute optlist argv
-    case errs of 
-        [] -> if OptionHelp `elem` opts 
+    case errs of
+        [] -> if OptionHelp `elem` opts
                 then putStrLn $ usageInfo (mkUsage progname) optlist
                 else do
                     r <- checkArgs opts
                     case r of
-                        Just (host, port) -> return ()
+                        Just (host, port) -> startKain host port
                         Nothing           -> failmsg progname
         _  -> do
             handleErrors errs
             failmsg progname
   where
     failmsg progname = do
-        hPutStrLn stderr (usageInfo (mkUsage progname) optlist) 
+        hPutStrLn stderr (usageInfo (mkUsage progname) optlist)
         exitFailure
 
 handleErrors :: [String] -> IO ()
