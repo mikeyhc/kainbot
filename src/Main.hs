@@ -4,6 +4,7 @@ import Control.Applicative
 import Control.Monad
 import Data.List
 import Kain
+import Kain.Internal
 import System.Console.GetOpt
 import System.Environment
 import System.Exit

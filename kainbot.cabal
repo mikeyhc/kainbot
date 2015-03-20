@@ -17,7 +17,8 @@ cabal-version:       >=1.10
 
 executable kainbot
   main-is:             Main.hs
-  -- other-modules:       
+  other-modules:       Kain,
+                       Kain.Internal
   -- other-extensions:    
   build-depends:       base       >=4.7      && <4.8,
                        mircy      >=0.1.0.0  && <0.2.0.0,
