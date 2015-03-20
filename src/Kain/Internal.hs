@@ -5,6 +5,7 @@ module Kain.Internal where
 import           Control.Applicative
 import           Control.Monad.State
 import qualified Data.ByteString as B
+import qualified Data.Map as M
 import           Network.Mircy
 import           System.IO
 
@@ -13,6 +14,7 @@ type Port = String
 
 data KainState = KainState 
     { kainAuthUser :: Maybe B.ByteString
+    , kainUserList :: M.Map B.ByteString B.ByteString
     }
 
 newtype KainT m a = KainT (StateT KainState (MircyT m) a)
@@ -30,7 +32,7 @@ instance (Monad m) => MonadMircy (KainT m) where
     getIRCHandle = KainT $ lift getIRCHandle
 
 runKainT :: (Monad m) => Handle -> KainT m a -> m a
-runKainT h (KainT s) = runMircyT (evalStateT s (KainState Nothing)) h
+runKainT h (KainT s) = runMircyT (evalStateT s (KainState Nothing M.empty)) h
 
 runKain :: HostName -> Port -> Kain () -> IO ()
-runKain h p (KainT s) = runMircy h p (evalStateT s (KainState Nothing))
+runKain h p (KainT s) = runMircy h p (evalStateT s (KainState Nothing M.empty))

@@ -37,6 +37,7 @@ handleMessage (IRCReply code cmd msg)     = showReply code cmd msg
 handleMessage (IRCError code cmd msg)     = showError code cmd msg 
                                          >> handleError code cmd msg
 handleMessage (IRCMsg nick user chan msg) = handlePrivMsg nick user chan msg
+handleMessage (IRCJoinMsg chan)           = handleJoinMsg chan
 handleMessage m                           = lift $ print m
 
 showReply :: Int -> B.ByteString -> B.ByteString -> Kain ()
@@ -69,6 +70,9 @@ handlePrivMsg nick user chan msg =
             [ "privmsg ", nick, "(", user, "): ", message ]
         handlePrivMsg' nick user chan message
 
+handleJoinMsg :: B.ByteString -> Kain ()
+handleJoinMsg _ = sendIRCCommand $ IRCWho Nothing
+
 dropWord :: B.ByteString -> B.ByteString
 dropWord = B.dropWhile (== ' ') . B.dropWhile (/= ' ')
 
@@ -79,11 +83,13 @@ handlePrivMsg' nick user chan msg
     | "auth " `B.isPrefixOf` lmsg   = doAuth nick user chan (dropWord msg)
     | "unauth" == lmsg              = ifauth nick user chan 
                                     $ doUnauth nick chan
-    | "quit" == lmsg                = ifauth nick user chan
-                                    $ lift exitSuccess
+    | "quit" == lmsg                = ifauth nick user chan $ do
+                                        sendIRCCommand (IRCQuit quitmsg)
+                                        lift exitSuccess
     | otherwise                     = return ()
   where
     lmsg = B.map toLower msg
+    quitmsg = Just "I'll be back"
     
 ifauth :: B.ByteString -> B.ByteString -> B.ByteString -> Kain () -> Kain ()
 ifauth nick user chan f = do
