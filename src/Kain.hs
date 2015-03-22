@@ -38,6 +38,7 @@ handleMessage (IRCError code cmd msg)     = showError code cmd msg
                                          >> handleError code cmd msg
 handleMessage (IRCMsg nick user chan msg) = handlePrivMsg nick user chan msg
 handleMessage (IRCJoinMsg chan)           = handleJoinMsg chan
+handleMessage (IRCNickMsg user _ nick)    = handleNickMsg user nick
 handleMessage m                           = lift $ print m
 
 showReply :: Int -> B.ByteString -> B.ByteString -> Kain ()
@@ -73,6 +74,9 @@ handlePrivMsg nick user chan msg =
 
 handleJoinMsg :: B.ByteString -> Kain ()
 handleJoinMsg _ = sendIRCCommand $ IRCWho Nothing
+
+handleNickMsg :: B.ByteString -> B.ByteString -> Kain ()
+handleNickMsg = setNick
 
 dropWord :: B.ByteString -> B.ByteString
 dropWord = B.dropWhile (== ' ') . B.dropWhile (/= ' ')
