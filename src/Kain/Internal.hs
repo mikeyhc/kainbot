@@ -12,7 +12,7 @@ import           System.IO
 type HostName = String
 type Port = String
 
-data KainState = KainState 
+data KainState = KainState
     { kainAuthUser :: Maybe B.ByteString
     , kainUserList :: M.Map B.ByteString B.ByteString
     }
@@ -36,3 +36,7 @@ runKainT h (KainT s) = runMircyT (evalStateT s (KainState Nothing M.empty)) h
 
 runKain :: HostName -> Port -> Kain () -> IO ()
 runKain h p (KainT s) = runMircy h p (evalStateT s (KainState Nothing M.empty))
+
+setNick :: B.ByteString -> B.ByteString -> Kain ()
+setNick user nick = modify (\k -> k
+    { kainUserList = M.insert user nick (kainUserList k) })
