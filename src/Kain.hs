@@ -31,15 +31,18 @@ prog = do
     forever $ getIRCMessage >>= handleMessage
 
 handleMessage :: IRCMessage -> Kain ()
-handleMessage (IRCNotice typ msg)         = showNotice typ msg
-handleMessage (IRCReply code cmd msg)     = showReply code cmd msg
-                                         >> handleReply code cmd msg
-handleMessage (IRCError code cmd msg)     = showError code cmd msg
-                                         >> handleError code cmd msg
-handleMessage (IRCMsg nick user chan msg) = handlePrivMsg nick user chan msg
-handleMessage (IRCJoinMsg chan)           = handleJoinMsg chan
-handleMessage (IRCNickMsg user _ nick)    = handleNickMsg user nick
-handleMessage m                           = lift $ print m
+handleMessage (IRCNotice typ msg)           = showNotice typ msg
+handleMessage (IRCReply code cmd msg)       = showReply code cmd msg
+                                           >> handleReply code cmd msg
+handleMessage (IRCError code cmd msg)       = showError code cmd msg
+                                           >> handleError code cmd msg
+handleMessage (IRCMsg nick user chan msg)   = handlePrivMsg nick user chan msg
+handleMessage m@(IRCJoinMsg _ "kain" chan)  = lift (print m)
+                                           >> handleJoinMsg chan
+handleMessage m@(IRCJoinMsg user nick _)    = lift (print m)
+                                           >> handleNewUser user nick
+handleMessage (IRCNickMsg user _ nick)      = handleNickMsg user nick
+handleMessage m                             = lift $ print m
 
 showReply :: Int -> B.ByteString -> B.ByteString -> Kain ()
 showReply code cmd msg = lift . B.putStrLn $ foldl1 B.append wordlist
@@ -77,6 +80,9 @@ handleJoinMsg _ = sendIRCCommand $ IRCWho Nothing
 
 handleNickMsg :: B.ByteString -> B.ByteString -> Kain ()
 handleNickMsg = setNick
+
+handleNewUser :: B.ByteString -> B.ByteString -> Kain ()
+handleNewUser = setNick
 
 dropWord :: B.ByteString -> B.ByteString
 dropWord = B.dropWhile (== ' ') . B.dropWhile (/= ' ')
@@ -123,10 +129,15 @@ showGod :: B.ByteString -> B.ByteString -> Kain ()
 showGod nick chan = do
     mauthuser <- gets kainAuthUser
     case mauthuser of
-        Just u  -> sendIRCCommand . IRCPrivMsg chan
-                                  $ foldl1 B.append [nick, ": ", u, " is god" ]
-        Nothing -> sendIRCCommand . IRCPrivMsg chan
-                                  $ B.append nick ": there is no god"
+        Just u  -> do
+            manick <- getNick u
+            case manick of
+                Just n  -> sendIRCCommand $ god n
+                Nothing -> sendIRCCommand nogod
+        Nothing -> sendIRCCommand nogod
+  where
+    nogod = IRCPrivMsg chan $ B.append nick ": there is no god"
+    god n = IRCPrivMsg chan $ foldl1 B.append [nick, ": ", n, " is god" ]
 
 doAuth :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
        -> Kain ()

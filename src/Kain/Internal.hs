@@ -40,3 +40,6 @@ runKain h p (KainT s) = runMircy h p (evalStateT s (KainState Nothing M.empty))
 setNick :: B.ByteString -> B.ByteString -> Kain ()
 setNick user nick = modify (\k -> k
     { kainUserList = M.insert user nick (kainUserList k) })
+
+getNick :: B.ByteString -> Kain (Maybe B.ByteString)
+getNick u = gets $ M.lookup u . kainUserList
