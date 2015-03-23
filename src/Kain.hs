@@ -36,7 +36,10 @@ handleMessage (IRCReply code cmd msg)       = showReply code cmd msg
                                            >> handleReply code cmd msg
 handleMessage (IRCError code cmd msg)       = showError code cmd msg
                                            >> handleError code cmd msg
-handleMessage (IRCMsg nick user chan msg)   = handlePrivMsg nick user chan msg
+handleMessage (IRCMsg nick user "kain" msg) = showPrivMsg nick user "kain" msg
+                                    >> handlePrivMsg True nick user "kain" msg
+handleMessage (IRCMsg nick user chan msg)   = showPrivMsg nick user chan msg
+                                    >> handlePrivMsg False nick user chan msg
 handleMessage m@(IRCJoinMsg _ "kain" chan)  = lift (print m)
                                            >> handleJoinMsg chan
 handleMessage m@(IRCJoinMsg user nick _)    = lift (print m)
@@ -57,6 +60,12 @@ showError code cmd msg = lift . B.putStrLn $ foldl1 B.append wordlist
   where
     wordlist = [ "error(", B.pack (show code), ", ", cmd, "): ", msg]
 
+showPrivMsg :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
+            -> Kain ()
+showPrivMsg nick user chan msg = lift . B.putStrLn $ foldl1 B.append wordlist
+  where
+    wordlist = [ "privmsg(", nick, "(", user, "), ", chan, "): ", msg ]
+
 handleError :: Int -> B.ByteString -> B.ByteString -> Kain ()
 handleError 451 _ _ = registerUser >> joinBots
 handleError _   _ _ = return ()
@@ -66,14 +75,16 @@ handleReply 376 _ _ = joinBots
 handleReply 352 _ m = handleWhoReply m
 handleReply _   _ _ = return ()
 
-handlePrivMsg :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
-              -> Kain ()
-handlePrivMsg nick user chan msg =
-    when ("kain:" `B.isPrefixOf` msg) $ do
-        let message = B.dropWhile (== ' ') $ B.drop 5 msg
+handlePrivMsg :: Bool -> B.ByteString -> B.ByteString -> B.ByteString
+              -> B.ByteString -> Kain ()
+handlePrivMsg whisper nick user chan msg =
+    when (whisper || "kain:" `B.isPrefixOf` msg) $ do
+        let message = if "kain:" `B.isPrefixOf` msg
+                        then B.dropWhile (== ' ') $ B.drop 5 msg
+                        else msg
         lift . B.putStrLn $ foldl1 B.append
             [ "privmsg ", nick, "(", user, "): ", message ]
-        handlePrivMsg' nick user chan message
+        handlePrivMsg' nick user (if whisper then nick else chan) message
 
 handleJoinMsg :: B.ByteString -> Kain ()
 handleJoinMsg _ = sendIRCCommand $ IRCWho Nothing
@@ -100,7 +111,7 @@ handleWhoReply m = let temp1 = dropWord m
 
 handlePrivMsg' :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
                -> Kain ()
-handlePrivMsg' nick user chan msg 
+handlePrivMsg' nick user chan msg
     | "god" == lmsg                 = showGod nick chan
     | "auth " `B.isPrefixOf` lmsg   = doAuth nick user chan (dropWord msg)
     | "unauth" == lmsg              = ifauth nick user chan

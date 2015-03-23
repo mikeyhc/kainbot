@@ -3,6 +3,4 @@ An IRC bot for testing the Mircy IRC library
 
 todo
 ----
-- handle PARTs
-- handle QUITs
-- smart message handling i.e use kain: in public channels but not private messages
+- create KainHandler monad and appropriate reply functions
