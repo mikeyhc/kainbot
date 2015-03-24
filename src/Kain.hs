@@ -2,6 +2,7 @@
 
 module Kain where
 
+import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.State
 import           Control.Monad.Trans
@@ -10,6 +11,9 @@ import           Data.Char (toLower)
 import           Kain.Internal
 import           Network.Mircy
 import           System.Exit
+
+currentNick :: B.ByteString
+currentNick = "kain"
 
 startKain :: HostName -> Port -> IO ()
 startKain host port = runKain host port prog
@@ -36,10 +40,8 @@ handleMessage (IRCReply code cmd msg)       = showReply code cmd msg
                                            >> handleReply code cmd msg
 handleMessage (IRCError code cmd msg)       = showError code cmd msg
                                            >> handleError code cmd msg
-handleMessage (IRCMsg nick user "kain" msg) = showPrivMsg nick user "kain" msg
-                                    >> handlePrivMsg True nick user "kain" msg
 handleMessage (IRCMsg nick user chan msg)   = showPrivMsg nick user chan msg
-                                    >> handlePrivMsg False nick user chan msg
+                                   >> handlePrivMsg nick user chan msg
 handleMessage m@(IRCJoinMsg _ "kain" chan)  = lift (print m)
                                            >> handleJoinMsg chan
 handleMessage m@(IRCJoinMsg user nick _)    = lift (print m)
@@ -75,16 +77,15 @@ handleReply 376 _ _ = joinBots
 handleReply 352 _ m = handleWhoReply m
 handleReply _   _ _ = return ()
 
-handlePrivMsg :: Bool -> B.ByteString -> B.ByteString -> B.ByteString
-              -> B.ByteString -> Kain ()
-handlePrivMsg whisper nick user chan msg =
-    when (whisper || "kain:" `B.isPrefixOf` msg) $ do
-        let message = if "kain:" `B.isPrefixOf` msg
-                        then B.dropWhile (== ' ') $ B.drop 5 msg
-                        else msg
+handlePrivMsg :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
+              -> Kain ()
+handlePrivMsg nick user chan msg =
+    when (chan == currentNick || "kain:" `B.isPrefixOf` msg) $ do
+        let message = if "kain:" `B.isPrefixOf` msg then dropWord msg
+                                                    else msg
         lift . B.putStrLn $ foldl1 B.append
             [ "privmsg ", nick, "(", user, "): ", message ]
-        handlePrivMsg' nick user (if whisper then nick else chan) message
+        runKainHandler nick user chan message $ handlePrivMsg' message
 
 handleJoinMsg :: B.ByteString -> Kain ()
 handleJoinMsg _ = sendIRCCommand $ IRCWho Nothing
@@ -109,65 +110,72 @@ handleWhoReply m = let temp1 = dropWord m
                        nick  = takeWord . dropWord $ dropWord temp2
                    in setNick user nick
 
-handlePrivMsg' :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
-               -> Kain ()
-handlePrivMsg' nick user chan msg
-    | "god" == lmsg                 = showGod nick chan
-    | "auth " `B.isPrefixOf` lmsg   = doAuth nick user chan (dropWord msg)
-    | "unauth" == lmsg              = ifauth nick user chan
-                                    $ doUnauth nick chan
-    | "quit" == lmsg                = ifauth nick user chan $ do
+sendReply :: B.ByteString -> KainHandler ()
+sendReply msg = do
+    chan <- gets kainHandlerChan
+    nick <- gets kainHandlerNick
+    if chan == currentNick
+        then sendIRCCommand $ IRCPrivMsg nick msg
+        else sendIRCCommand . IRCPrivMsg chan . B.append nick
+                                              $ B.append ": " msg
+
+handlePrivMsg' :: B.ByteString -> KainHandler ()
+handlePrivMsg' msg
+    | "god" == lmsg                 = showGod
+    | "auth " `B.isPrefixOf` lmsg   = doAuth
+    | "unauth" == lmsg              = ifauth doUnauth
+    | "quit" == lmsg                = ifauth $ do
                                         sendIRCCommand (IRCQuit quitmsg)
                                         lift exitSuccess
-    | "localnick" == lmsg           = gets kainUserList >>= lift . print
+    | "localnick" == lmsg           = gets kainHandlerUserList >>= lift . print
     | otherwise                     = return ()
   where
     lmsg = B.map toLower msg
     quitmsg = Just "I'll be back"
 
-ifauth :: B.ByteString -> B.ByteString -> B.ByteString -> Kain () -> Kain ()
-ifauth nick user chan f = do
-    mauthuser <- gets kainAuthUser
+ifauth :: KainHandler () -> KainHandler ()
+ifauth f = do
+    mauthuser <- gets kainHandlerAuthUser
+    user <- gets kainHandlerUser
     case mauthuser of
         Nothing -> authfailed
         Just u  -> if u == user then f
                                 else authfailed
   where
-    authfailed = sendIRCCommand . IRCPrivMsg chan
-               $ B.append nick ": you are not authenticated for that"
+    authfailed = sendReply "you are not authenticated for that"
 
-showGod :: B.ByteString -> B.ByteString -> Kain ()
-showGod nick chan = do
-    mauthuser <- gets kainAuthUser
+showGod :: KainHandler ()
+showGod = do
+    mauthuser <- gets kainHandlerAuthUser
     case mauthuser of
         Just u  -> do
-            manick <- getNick u
+            manick <- getNickHandler u
             case manick of
-                Just n  -> sendIRCCommand $ god n
-                Nothing -> sendIRCCommand nogod
-        Nothing -> sendIRCCommand nogod
+                Just n  -> sendReply $ god n
+                Nothing -> sendReply $ god u
+        Nothing -> sendReply nogod
   where
-    nogod = IRCPrivMsg chan $ B.append nick ": there is no god"
-    god n = IRCPrivMsg chan $ foldl1 B.append [nick, ": ", n, " is god" ]
+    nogod = "there is no god"
+    god = (`B.append` " is god")
 
-doAuth :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
-       -> Kain ()
-doAuth nick user chan pass = do
-    state <- get
+doAuth :: KainHandler ()
+doAuth = do
+    state <- gets kainHandlerKain
+    user <- gets kainHandlerUser
+    pass <- dropWord <$> gets kainHandlerMsg
     case kainAuthUser state of
-        Just _  -> sendIRCCommand . IRCPrivMsg chan
-                                  $ B.append nick
-                                  ": someone has already authenticated"
+        Just _  -> sendReply "someone has already authenticated"
         Nothing -> if pass == "kainpass"
             then do
-                put $ state { kainAuthUser = Just user }
-                sendIRCCommand . IRCPrivMsg chan
-                               $ B.append nick ": successfully authenticated"
-            else sendIRCCommand . IRCPrivMsg chan
-                                $ B.append nick ": incorrect password"
+                modify (updateKainState user state)
+                sendReply "successfully authenticated"
+            else sendReply "incorrect password"
+  where
+    updateKainState user state s =
+        s { kainHandlerKain = state { kainAuthUser = Just user }}
 
-doUnauth :: B.ByteString -> B.ByteString -> Kain ()
-doUnauth nick chan = do
-    modify (\s -> s { kainAuthUser = Nothing })
-    sendIRCCommand . IRCPrivMsg chan
-                   $ B.append nick ": successfully unauthenticated"
+doUnauth :: KainHandler ()
+doUnauth = do
+    modify (\s -> s { kainHandlerKain = (kainHandlerKain s)
+        { kainAuthUser = Nothing }})
+    sendReply "successfully unauthenticated"

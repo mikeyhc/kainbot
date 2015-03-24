@@ -65,12 +65,18 @@ runKainHandlerT :: (Monad m) => B.ByteString -> B.ByteString -> B.ByteString
 runKainHandlerT nick user chan msg (KainHandlerT s) = do
     state <- get
     (ret, s) <- runStateT s (KainHandlerState nick user chan msg state)
-    put state
+    put $ kainHandlerKain s
     return ret
 
 runKainHandler :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
                -> KainHandler a -> Kain a
 runKainHandler = runKainHandlerT
+
+kainHandlerAuthUser :: KainHandlerState -> Maybe B.ByteString
+kainHandlerAuthUser = kainAuthUser . kainHandlerKain
+
+kainHandlerUserList :: KainHandlerState -> M.Map B.ByteString B.ByteString
+kainHandlerUserList = kainUserList . kainHandlerKain
 
 setNick :: B.ByteString -> B.ByteString -> Kain ()
 setNick user nick = modify (\k -> k
@@ -78,3 +84,6 @@ setNick user nick = modify (\k -> k
 
 getNick :: B.ByteString -> Kain (Maybe B.ByteString)
 getNick u = gets $ M.lookup u . kainUserList
+
+getNickHandler :: B.ByteString -> KainHandler (Maybe B.ByteString)
+getNickHandler u = gets $ M.lookup u . kainHandlerUserList
