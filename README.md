@@ -3,4 +3,4 @@ An IRC bot for testing the Mircy IRC library
 
 todo
 ----
-- create KainHandler monad and appropriate reply functions
+- documentation
