@@ -127,7 +127,7 @@ handlePrivMsg' msg
     | "quit" == lmsg                = ifauth $ do
                                         sendIRCCommand (IRCQuit quitmsg)
                                         lift exitSuccess
-    | "localnick" == lmsg           = gets kainHandlerUserList >>= lift . print
+    | "localnick" == lmsg           = kainUserList >>= lift . print
     | otherwise                     = return ()
   where
     lmsg = B.map toLower msg
@@ -135,7 +135,7 @@ handlePrivMsg' msg
 
 ifauth :: KainHandler () -> KainHandler ()
 ifauth f = do
-    mauthuser <- gets kainHandlerAuthUser
+    mauthuser <- kainAuthUser
     user <- gets kainHandlerUser
     case mauthuser of
         Nothing -> authfailed
@@ -146,10 +146,10 @@ ifauth f = do
 
 showGod :: KainHandler ()
 showGod = do
-    mauthuser <- gets kainHandlerAuthUser
+    mauthuser <- kainAuthUser
     case mauthuser of
         Just u  -> do
-            manick <- getNickHandler u
+            manick <- getNick u
             case manick of
                 Just n  -> sendReply $ god n
                 Nothing -> sendReply $ god u
@@ -163,19 +163,15 @@ doAuth = do
     state <- gets kainHandlerKain
     user <- gets kainHandlerUser
     pass <- dropWord <$> gets kainHandlerMsg
-    case kainAuthUser state of
+    case _kainAuthUser state of -- TODO: dont use the internal getter
         Just _  -> sendReply "someone has already authenticated"
         Nothing -> if pass == "kainpass"
             then do
-                modify (updateKainState user state)
+                setKainAuthUser $ Just user
                 sendReply "successfully authenticated"
             else sendReply "incorrect password"
-  where
-    updateKainState user state s =
-        s { kainHandlerKain = state { kainAuthUser = Just user }}
 
 doUnauth :: KainHandler ()
 doUnauth = do
-    modify (\s -> s { kainHandlerKain = (kainHandlerKain s)
-        { kainAuthUser = Nothing }})
+    setKainAuthUser Nothing
     sendReply "successfully unauthenticated"

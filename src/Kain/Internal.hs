@@ -3,6 +3,7 @@
 module Kain.Internal where
 
 import           Control.Applicative
+import           Control.Monad
 import           Control.Monad.State
 import qualified Data.ByteString as B
 import qualified Data.Map as M
@@ -13,8 +14,8 @@ type HostName = String
 type Port = String
 
 data KainState = KainState
-    { kainAuthUser :: Maybe B.ByteString
-    , kainUserList :: M.Map B.ByteString B.ByteString
+    { _kainAuthUser :: Maybe B.ByteString
+    , _kainUserList :: M.Map B.ByteString B.ByteString
     }
 
 
@@ -25,6 +26,27 @@ data KainHandlerState = KainHandlerState
     , kainHandlerMsg  :: B.ByteString
     , kainHandlerKain :: KainState
     }
+
+data KainPluginState a  = KainPluginState
+    { kainPluginData    :: a
+    , kainPluginHandler :: KainHandlerState
+    , kainPluginKain    :: KainState
+    }
+
+class KainStateMonad m where
+    getKainState    :: m KainState
+    putKainState    :: KainState -> m ()
+    modifyKainState :: (KainState -> KainState) -> m ()
+
+class KainHandlerMonad m where
+    getKainHandler    :: m KainHandlerState
+    putKainHandler    :: KainHandlerState -> m ()
+    modifyKainHandler :: (KainHandlerState -> KainHandlerState) -> m ()
+
+class KainPluginMonad m where
+    getKainPlugin    :: m (KainPluginState a)
+    putKainPlugin    :: KainPluginState a -> m ()
+    modifyKainPlugin :: (KainPluginState a -> KainPluginState a) -> m ()
 
 newtype KainT m a = KainT (StateT KainState (MircyT m) a)
     deriving (Functor, Applicative, Monad, MonadIO)
@@ -40,6 +62,11 @@ instance (Monad m) => MonadState KainState (KainT m) where
 instance (Monad m) => MonadMircy (KainT m) where
     getIRCHandle = KainT $ lift getIRCHandle
 
+instance (Monad m) => KainStateMonad (KainT m) where
+    getKainState    = get
+    putKainState    = put
+    modifyKainState = modify
+
 newtype KainHandlerT m a = KainHandlerT (StateT KainHandlerState (KainT m) a)
     deriving (Functor, Applicative, Monad, MonadIO)
 
@@ -53,6 +80,12 @@ instance (Monad m) => MonadState KainHandlerState (KainHandlerT m) where
 
 instance (Monad m) => MonadMircy (KainHandlerT m) where
     getIRCHandle = KainHandlerT . lift . KainT $ lift getIRCHandle
+
+instance (Monad m) => KainStateMonad (KainHandlerT m) where
+    getKainState = gets kainHandlerKain
+    putKainState k = modify (\s -> s { kainHandlerKain = k })
+    modifyKainState f = modify (\s -> s { kainHandlerKain
+                                      = f (kainHandlerKain s) })
 
 runKainT :: (Monad m) => Handle -> KainT m a -> m a
 runKainT h (KainT s) = runMircyT (evalStateT s (KainState Nothing M.empty)) h
@@ -72,18 +105,20 @@ runKainHandler :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
                -> KainHandler a -> Kain a
 runKainHandler = runKainHandlerT
 
-kainHandlerAuthUser :: KainHandlerState -> Maybe B.ByteString
-kainHandlerAuthUser = kainAuthUser . kainHandlerKain
+kainAuthUser :: (KainStateMonad m, Monad m) => m (Maybe B.ByteString)
+kainAuthUser = liftM _kainAuthUser getKainState
 
-kainHandlerUserList :: KainHandlerState -> M.Map B.ByteString B.ByteString
-kainHandlerUserList = kainUserList . kainHandlerKain
+setKainAuthUser :: (KainStateMonad m, Monad m) => Maybe B.ByteString -> m ()
+setKainAuthUser u = modifyKainState (\s -> s { _kainAuthUser = u })
 
-setNick :: B.ByteString -> B.ByteString -> Kain ()
-setNick user nick = modify (\k -> k
-    { kainUserList = M.insert user nick (kainUserList k) })
+kainUserList :: (KainStateMonad m, Monad m)
+             => m (M.Map B.ByteString B.ByteString)
+kainUserList = liftM _kainUserList getKainState
 
-getNick :: B.ByteString -> Kain (Maybe B.ByteString)
-getNick u = gets $ M.lookup u . kainUserList
+setNick :: (KainStateMonad m, Monad m) => B.ByteString -> B.ByteString -> m ()
+setNick user nick = modifyKainState (\k -> k
+    { _kainUserList = M.insert user nick (_kainUserList k) })
 
-getNickHandler :: B.ByteString -> KainHandler (Maybe B.ByteString)
-getNickHandler u = gets $ M.lookup u . kainHandlerUserList
+getNick :: (KainStateMonad m, Monad m)
+        => B.ByteString -> m (Maybe B.ByteString)
+getNick u = liftM (M.lookup u) kainUserList
