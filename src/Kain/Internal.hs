@@ -1,4 +1,5 @@
-{-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving,
+             FlexibleInstances #-}
 
 module Kain.Internal where
 
@@ -20,17 +21,16 @@ data KainState = KainState
 
 
 data KainHandlerState = KainHandlerState
-    { kainHandlerNick :: B.ByteString
-    , kainHandlerUser :: B.ByteString
-    , kainHandlerChan :: B.ByteString
-    , kainHandlerMsg  :: B.ByteString
-    , kainHandlerKain :: KainState
+    { _kainHandlerNick :: B.ByteString
+    , _kainHandlerUser :: B.ByteString
+    , _kainHandlerChan :: B.ByteString
+    , _kainHandlerMsg  :: B.ByteString
+    , _kainHandlerKain :: KainState
     }
 
 data KainPluginState a  = KainPluginState
-    { kainPluginData    :: a
-    , kainPluginHandler :: KainHandlerState
-    , kainPluginKain    :: KainState
+    { _kainPluginData    :: a
+    , _kainPluginHandler :: KainHandlerState
     }
 
 class KainStateMonad m where
@@ -43,10 +43,10 @@ class KainHandlerMonad m where
     putKainHandler    :: KainHandlerState -> m ()
     modifyKainHandler :: (KainHandlerState -> KainHandlerState) -> m ()
 
-class KainPluginMonad m where
-    getKainPlugin    :: m (KainPluginState a)
-    putKainPlugin    :: KainPluginState a -> m ()
-    modifyKainPlugin :: (KainPluginState a -> KainPluginState a) -> m ()
+class KainPluginMonad b m where
+    getKainPlugin    :: m (KainPluginState b)
+    putKainPlugin    :: KainPluginState b -> m ()
+    modifyKainPlugin :: (KainPluginState b -> KainPluginState b) -> m ()
 
 newtype KainT m a = KainT (StateT KainState (MircyT m) a)
     deriving (Functor, Applicative, Monad, MonadIO)
@@ -79,13 +79,54 @@ instance (Monad m) => MonadState KainHandlerState (KainHandlerT m) where
     state = KainHandlerT . state
 
 instance (Monad m) => MonadMircy (KainHandlerT m) where
-    getIRCHandle = KainHandlerT . lift . KainT $ lift getIRCHandle
+    getIRCHandle = KainHandlerT . lift $ getIRCHandle
 
 instance (Monad m) => KainStateMonad (KainHandlerT m) where
-    getKainState = gets kainHandlerKain
-    putKainState k = modify (\s -> s { kainHandlerKain = k })
-    modifyKainState f = modify (\s -> s { kainHandlerKain
-                                      = f (kainHandlerKain s) })
+    getKainState = gets _kainHandlerKain
+    putKainState k = modify (\s -> s { _kainHandlerKain = k })
+    modifyKainState f = modify (\s -> s { _kainHandlerKain
+                                      = f (_kainHandlerKain s) })
+
+instance (Monad m) => KainHandlerMonad (KainHandlerT m) where
+    getKainHandler    = get
+    putKainHandler    = put
+    modifyKainHandler = modify
+
+newtype KainPluginT b m a = KainPluginT (StateT (KainPluginState b)
+                                                (KainHandlerT m) a)
+    deriving (Functor, Applicative, Monad, MonadIO)
+
+type KainPlugin b a = KainPluginT (StateT (KainPluginState b)
+                                  (KainHandlerT IO) a)
+
+instance MonadTrans (KainPluginT a) where
+    lift = KainPluginT . lift . lift
+
+instance (Monad m) => MonadState (KainPluginState b) (KainPluginT b m) where
+    state = KainPluginT . state
+
+instance (Monad m) => MonadMircy (KainPluginT b m) where
+    getIRCHandle = KainPluginT . lift $ getIRCHandle
+
+instance (Monad m) => KainStateMonad (KainPluginT b m) where
+    getKainState      = liftM _kainHandlerKain getKainHandler
+    putKainState k    = do
+        khs <- getKainHandler
+        putKainHandler $ khs { _kainHandlerKain = k }
+    modifyKainState f = do
+        khs <- getKainState
+        putKainState (f khs)
+
+instance (Monad m) => KainHandlerMonad (KainPluginT b m) where
+    getKainHandler      = gets _kainPluginHandler
+    putKainHandler h    = modify (\s -> s { _kainPluginHandler = h })
+    modifyKainHandler f = modify (\s -> s { _kainPluginHandler
+                                          = f (_kainPluginHandler s) })
+
+instance (Monad m) => KainPluginMonad b (KainPluginT b m) where
+    getKainPlugin    = get
+    putKainPlugin    = put
+    modifyKainPlugin = modify
 
 runKainT :: (Monad m) => Handle -> KainT m a -> m a
 runKainT h (KainT s) = runMircyT (evalStateT s (KainState Nothing M.empty)) h
@@ -97,13 +138,20 @@ runKainHandlerT :: (Monad m) => B.ByteString -> B.ByteString -> B.ByteString
                 -> B.ByteString -> KainHandlerT m a -> KainT m a
 runKainHandlerT nick user chan msg (KainHandlerT s) = do
     state <- get
-    (ret, s) <- runStateT s (KainHandlerState nick user chan msg state)
-    put $ kainHandlerKain s
+    (ret, rs) <- runStateT s (KainHandlerState nick user chan msg state)
+    put $ _kainHandlerKain rs
     return ret
 
 runKainHandler :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
                -> KainHandler a -> Kain a
 runKainHandler = runKainHandlerT
+
+runKainPluginT :: (Monad m) => b -> KainPluginT b m a -> KainHandlerT m a
+runKainPluginT p (KainPluginT s) = do
+    state <- getKainHandler
+    (ret, rs) <- runStateT s (KainPluginState p state)
+    putKainHandler $ _kainPluginHandler rs
+    return ret
 
 kainAuthUser :: (KainStateMonad m, Monad m) => m (Maybe B.ByteString)
 kainAuthUser = liftM _kainAuthUser getKainState

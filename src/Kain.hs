@@ -112,8 +112,8 @@ handleWhoReply m = let temp1 = dropWord m
 
 sendReply :: B.ByteString -> KainHandler ()
 sendReply msg = do
-    chan <- gets kainHandlerChan
-    nick <- gets kainHandlerNick
+    chan <- gets _kainHandlerChan
+    nick <- gets _kainHandlerNick
     if chan == currentNick
         then sendIRCCommand $ IRCPrivMsg nick msg
         else sendIRCCommand . IRCPrivMsg chan . B.append nick
@@ -136,7 +136,7 @@ handlePrivMsg' msg
 ifauth :: KainHandler () -> KainHandler ()
 ifauth f = do
     mauthuser <- kainAuthUser
-    user <- gets kainHandlerUser
+    user <- gets _kainHandlerUser
     case mauthuser of
         Nothing -> authfailed
         Just u  -> if u == user then f
@@ -160,9 +160,9 @@ showGod = do
 
 doAuth :: KainHandler ()
 doAuth = do
-    state <- gets kainHandlerKain
-    user <- gets kainHandlerUser
-    pass <- dropWord <$> gets kainHandlerMsg
+    state <- gets _kainHandlerKain
+    user <- gets _kainHandlerUser
+    pass <- dropWord <$> gets _kainHandlerMsg
     case _kainAuthUser state of -- TODO: dont use the internal getter
         Just _  -> sendReply "someone has already authenticated"
         Nothing -> if pass == "kainpass"

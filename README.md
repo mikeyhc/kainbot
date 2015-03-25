@@ -4,3 +4,6 @@ An IRC bot for testing the Mircy IRC library
 todo
 ----
 - documentation
+- modifiable nick
+- modifiable password
+- remove internal field references from Kain.hs
