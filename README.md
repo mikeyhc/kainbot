@@ -6,4 +6,4 @@ todo
 - documentation
 - modifiable nick
 - modifiable password
-- remove internal field references from Kain.hs
+- plugin architecture

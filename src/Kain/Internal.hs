@@ -19,7 +19,6 @@ data KainState = KainState
     , _kainUserList :: M.Map B.ByteString B.ByteString
     }
 
-
 data KainHandlerState = KainHandlerState
     { _kainHandlerNick :: B.ByteString
     , _kainHandlerUser :: B.ByteString
@@ -141,7 +140,6 @@ runKainHandlerT nick user chan msg (KainHandlerT s) = do
     (ret, rs) <- runStateT s (KainHandlerState nick user chan msg state)
     put $ _kainHandlerKain rs
     return ret
-
 runKainHandler :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
                -> KainHandler a -> Kain a
 runKainHandler = runKainHandlerT
@@ -170,3 +168,15 @@ setNick user nick = modifyKainState (\k -> k
 getNick :: (KainStateMonad m, Monad m)
         => B.ByteString -> m (Maybe B.ByteString)
 getNick u = liftM (M.lookup u) kainUserList
+
+getHandlerChan :: (KainHandlerMonad m, Monad m) => m B.ByteString
+getHandlerChan = liftM _kainHandlerChan getKainHandler
+
+getHandlerNick :: (KainHandlerMonad m, Monad m) => m B.ByteString
+getHandlerNick = liftM _kainHandlerNick getKainHandler
+
+getHandlerUser :: (KainHandlerMonad m, Monad m) => m B.ByteString
+getHandlerUser = liftM _kainHandlerUser getKainHandler
+
+getHandlerMsg :: (KainHandlerMonad m, Monad m) => m B.ByteString
+getHandlerMsg = liftM _kainHandlerMsg getKainHandler
