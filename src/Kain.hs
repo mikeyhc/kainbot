@@ -15,8 +15,9 @@ import           System.Exit
 currentNick :: B.ByteString
 currentNick = "kain"
 
-startKain :: HostName -> Port -> IO ()
-startKain host port = runKain host port prog
+startKain :: String -> String -> HostName -> Port -> IO ()
+startKain nick pass host port =
+    runKain (B.pack nick) (B.pack pass) host port prog
 
 registerNick :: Kain ()
 registerNick = sendIRCCommand $ IRCNick "kain"

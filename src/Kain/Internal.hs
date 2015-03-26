@@ -16,6 +16,8 @@ type Port = String
 
 data KainState = KainState
     { _kainAuthUser :: Maybe B.ByteString
+    , _kainNick     :: B.ByteString
+    , _kainPassword :: B.ByteString
     , _kainUserList :: M.Map B.ByteString B.ByteString
     }
 
@@ -127,11 +129,16 @@ instance (Monad m) => KainPluginMonad b (KainPluginT b m) where
     putKainPlugin    = put
     modifyKainPlugin = modify
 
-runKainT :: (Monad m) => Handle -> KainT m a -> m a
-runKainT h (KainT s) = runMircyT (evalStateT s (KainState Nothing M.empty)) h
+runKainT :: (Monad m) => B.ByteString -> B.ByteString -> Handle -> KainT m a
+                      -> m a
+runKainT nick pass h (KainT s) = runMircyT (evalStateT s initState) h
+  where
+    initState = KainState Nothing nick pass M.empty
 
-runKain :: HostName -> Port -> Kain () -> IO ()
-runKain h p (KainT s) = runMircy h p (evalStateT s (KainState Nothing M.empty))
+runKain :: B.ByteString -> B.ByteString -> HostName -> Port -> Kain () -> IO ()
+runKain nick pass h p (KainT s) = runMircy h p (evalStateT s initState)
+  where
+    initState = KainState Nothing nick pass M.empty
 
 runKainHandlerT :: (Monad m) => B.ByteString -> B.ByteString -> B.ByteString
                 -> B.ByteString -> KainHandlerT m a -> KainT m a
