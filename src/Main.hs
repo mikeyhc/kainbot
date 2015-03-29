@@ -68,7 +68,8 @@ handleErrors :: [String] -> IO ()
 handleErrors = mapM_ (hPutStrLn stderr . (++) "\nerror: ")
 
 mkUsage :: String -> String
-mkUsage name = "usage:\n  " ++ name ++ " -H HOST -p PORT [-h]\n"
+mkUsage name = "usage:\n  " ++ name ++ " -H HOST [-p PORT] [-n NICK] "
+            ++ "[-P PASSWORD] [-h]\n"
 
 checkArgs :: [OptionType]
           -> (Maybe String, Maybe String, Maybe String, Maybe String)

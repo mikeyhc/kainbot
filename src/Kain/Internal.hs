@@ -168,6 +168,12 @@ kainUserList :: (KainStateMonad m, Monad m)
              => m (M.Map B.ByteString B.ByteString)
 kainUserList = liftM _kainUserList getKainState
 
+kainNick :: (KainStateMonad m, Monad m) => m B.ByteString
+kainNick = liftM _kainNick getKainState
+
+kainPassword :: (KainStateMonad m, Monad m) => m B.ByteString
+kainPassword = liftM _kainPassword getKainState
+
 setNick :: (KainStateMonad m, Monad m) => B.ByteString -> B.ByteString -> m ()
 setNick user nick = modifyKainState (\k -> k
     { _kainUserList = M.insert user nick (_kainUserList k) })

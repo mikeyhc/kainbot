@@ -12,15 +12,12 @@ import           Kain.Internal
 import           Network.Mircy
 import           System.Exit
 
-currentNick :: B.ByteString
-currentNick = "kain"
-
 startKain :: String -> String -> HostName -> Port -> IO ()
 startKain nick pass host port =
     runKain (B.pack nick) (B.pack pass) host port prog
 
 registerNick :: Kain ()
-registerNick = sendIRCCommand $ IRCNick "kain"
+registerNick = kainNick >>= sendIRCCommand . IRCNick
 
 registerUser :: Kain ()
 registerUser = sendIRCCommand $ IRCUser "kain" "8" "*" "kainbot"
@@ -80,10 +77,12 @@ handleReply _   _ _ = return ()
 
 handlePrivMsg :: B.ByteString -> B.ByteString -> B.ByteString -> B.ByteString
               -> Kain ()
-handlePrivMsg nick user chan msg =
-    when (chan == currentNick || "kain:" `B.isPrefixOf` msg) $ do
-        let message = if "kain:" `B.isPrefixOf` msg then dropWord msg
-                                                    else msg
+handlePrivMsg nick user chan msg = do
+    currentNick <- kainNick
+    let nickWithCol = B.append currentNick ":"
+    when (chan == currentNick || nickWithCol `B.isPrefixOf` msg) $ do
+        let message = if nickWithCol `B.isPrefixOf` msg then dropWord msg
+                                                        else msg
         lift . B.putStrLn $ foldl1 B.append
             [ "privmsg ", nick, "(", user, "): ", message ]
         runKainHandler nick user chan message $ handlePrivMsg' message
@@ -115,6 +114,7 @@ sendReply :: B.ByteString -> KainHandler ()
 sendReply msg = do
     chan <- getHandlerChan
     nick <- getHandlerNick
+    currentNick <- kainNick
     if chan == currentNick
         then sendIRCCommand $ IRCPrivMsg nick msg
         else sendIRCCommand . IRCPrivMsg chan . B.append nick
@@ -163,10 +163,11 @@ doAuth :: KainHandler ()
 doAuth = do
     mauser <- kainAuthUser
     user <- getHandlerUser
-    pass <- dropWord <$> getHandlerMsg
+    pass <- kainPassword
+    pass' <- dropWord <$> getHandlerMsg
     case mauser of
         Just _  -> sendReply "someone has already authenticated"
-        Nothing -> if pass == "kainpass"
+        Nothing -> if pass == pass'
             then do
                 setKainAuthUser $ Just user
                 sendReply "successfully authenticated"
