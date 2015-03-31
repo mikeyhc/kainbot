@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving,
-             FlexibleInstances #-}
+             FlexibleInstances, OverloadedStrings #-}
 
 module Kain.Internal where
 
@@ -8,17 +8,30 @@ import           Control.Monad
 import           Control.Monad.State
 import qualified Data.ByteString as B
 import qualified Data.Map as M
+import           Kain.Travis
+import           Kain.Travis.Internal
 import           Network.Mircy
 import           System.IO
 
 type HostName = String
 type Port = String
 
+data KainPrivHandler a = KainPrivHandler
+    { kainPrivHandlerPrefix  :: B.ByteString
+    , kainPrivHandlerEnabled :: Bool
+    , kainPrivHandlerState   :: a
+    }
+
+data KainPrivHandlers = KainPrivHandlers
+    { kainPrivTravisHandler :: KainPrivHandler TravisState
+    }
+
 data KainState = KainState
     { _kainAuthUser :: Maybe B.ByteString
     , _kainNick     :: B.ByteString
     , _kainPassword :: B.ByteString
     , _kainUserList :: M.Map B.ByteString B.ByteString
+    , _kainHandlers :: KainPrivHandlers
     }
 
 data KainHandlerState = KainHandlerState
@@ -100,6 +113,8 @@ newtype KainPluginT b m a = KainPluginT (StateT (KainPluginState b)
 type KainPlugin b a = KainPluginT (StateT (KainPluginState b)
                                   (KainHandlerT IO) a)
 
+type TravisPlugin a = KainPlugin TravisState a
+
 instance MonadTrans (KainPluginT a) where
     lift = KainPluginT . lift . lift
 
@@ -131,14 +146,21 @@ instance (Monad m) => KainPluginMonad b (KainPluginT b m) where
 
 runKainT :: (Monad m) => B.ByteString -> B.ByteString -> Handle -> KainT m a
                       -> m a
-runKainT nick pass h (KainT s) = runMircyT (evalStateT s initState) h
-  where
-    initState = KainState Nothing nick pass M.empty
+runKainT nick pass h (KainT s) = runMircyT (evalStateT s
+                               $ initKainState nick pass) h
 
 runKain :: B.ByteString -> B.ByteString -> HostName -> Port -> Kain () -> IO ()
-runKain nick pass h p (KainT s) = runMircy h p (evalStateT s initState)
-  where
-    initState = KainState Nothing nick pass M.empty
+runKain nick pass h p (KainT s) = runMircy h p (evalStateT s
+                                $ initKainState nick pass)
+
+initKainState :: B.ByteString -> B.ByteString -> KainState
+initKainState nick pass = KainState Nothing nick pass M.empty initHandlers
+
+initHandlers :: KainPrivHandlers
+initHandlers = KainPrivHandlers (disabledHandler "travis" newTravisState)
+
+disabledHandler :: B.ByteString -> a -> KainPrivHandler a
+disabledHandler n = KainPrivHandler n False
 
 runKainHandlerT :: (Monad m) => B.ByteString -> B.ByteString -> B.ByteString
                 -> B.ByteString -> KainHandlerT m a -> KainT m a
